@@ -1,0 +1,19 @@
+###Tracking email yang sudah dikirim.###
+
+CREATE TABLE `finops_ai.email_notification`
+(
+  notification_id STRING,
+
+  query_id STRING,
+
+  recipient STRING,
+
+  email_sent BOOLEAN,
+
+  sent_at TIMESTAMP,
+
+  acknowledged BOOLEAN,
+
+  acknowledged_at TIMESTAMP
+)
+PARTITION BY DATE(sent_at);

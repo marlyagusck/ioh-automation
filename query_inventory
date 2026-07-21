@@ -1,0 +1,24 @@
+### Menyimpan semua query yang ditemukan dari INFORMATION_SCHEMA. ###
+
+CREATE TABLE `ck-finops-data-prd-in60.finops_ai.query_inventory`
+(
+  query_id STRING,
+  job_id STRING,
+  project_id STRING,
+  user_email STRING,
+  creation_time TIMESTAMP,
+
+  statement_type STRING,
+
+  total_bytes_processed INT64,
+  total_bytes_billed INT64,
+  total_slot_ms INT64,
+
+  query_text STRING,
+
+  status STRING,
+
+  inserted_at TIMESTAMP
+)
+PARTITION BY DATE(inserted_at)
+CLUSTER BY project_id, user_email;

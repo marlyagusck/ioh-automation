@@ -1,0 +1,21 @@
+### Ini yang nanti dipakai untuk menunjukkan ROI ke customer. ###
+
+CREATE TABLE `finops_ai.optimization_tracking`
+(
+  query_id STRING,
+
+  project_id STRING,
+
+  user_email STRING,
+
+  before_bytes_billed INT64,
+
+  after_bytes_billed INT64,
+
+  saving_percent FLOAT64,
+
+  saving_bytes INT64,
+
+  calculated_at TIMESTAMP
+)
+PARTITION BY DATE(calculated_at);

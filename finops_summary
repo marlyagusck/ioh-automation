@@ -1,0 +1,16 @@
+### Untuk dashboard executive. ###
+
+CREATE TABLE `finops_ai.finops_summary`
+(
+  summary_date DATE,
+
+  total_queries INT64,
+
+  expensive_queries INT64,
+
+  total_bytes_billed INT64,
+
+  potential_saving_bytes INT64,
+
+  actual_saving_bytes INT64
+);
