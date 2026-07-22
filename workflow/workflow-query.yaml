@@ -1,0 +1,29 @@
+main:
+  steps:
+
+    - getProjects:
+        call: http.get
+        args:
+          url: https://finops-top-project-xxxx.asia-southeast2.run.app/run
+          auth:
+            type: OIDC
+        result: projectResult
+
+    - processProjects:
+        for:
+          value: project
+          in: ${projectResult.body.projects}
+          steps:
+
+            - collectQueries:
+                call: http.post
+                args:
+                  url: https://finops-query-collector-xxxx.asia-southeast2.run.app/run
+                  auth:
+                    type: OIDC
+                  body:
+                    project_id: ${project}
+
+    - done:
+        return:
+          status: SUCCESS
