@@ -10,8 +10,9 @@ RUN pip install \
 
 COPY . .
 
-CMD exec gunicorn \
+CMD gunicorn \
     --bind :8080 \
-    --workers 1 \
+    --workers 2 \
     --threads 8 \
+    --timeout 300 \
     app:app
