@@ -4,7 +4,7 @@ from vertexai.generative_models import GenerativeModel
 import vertexai
 
 import uuid
-import re
+import json
 
 from datetime import datetime
 
@@ -27,34 +27,16 @@ model = GenerativeModel(
 )
 
 
-def extract(pattern, text):
-
-    match = re.search(
-        pattern,
-        text,
-        re.IGNORECASE | re.DOTALL
-    )
-
-    if match:
-        return match.group(1).strip()
-
-    return ""
-
-
 @app.route("/")
 def health():
-
-    return {
-        "status": "ok"
-    }
+    return {"status": "ok"}
 
 
 @app.route("/version")
 def version():
-
     return {
         "service": "finops-ai-analyzer",
-        "version": "v4"
+        "version": "v5"
     }
 
 
@@ -103,80 +85,92 @@ def run():
             prompt = f"""
 You are a Senior Google BigQuery FinOps Consultant.
 
-Analyze this BigQuery query.
+Analyze this query and return ONLY VALID JSON.
 
-Return EXACTLY in this format.
+{{
+  "severity": "HIGH|MEDIUM|LOW",
+  "root_cause": "",
+  "ai_summary": "",
+  "recommendation": "",
+  "optimized_sql": "",
+  "potential_saving_percent": 0
+}}
 
-SEVERITY:
-HIGH|MEDIUM|LOW
-
-ROOT_CAUSE:
-<short root cause>
-
-AI_SUMMARY:
-<short summary>
-
-RECOMMENDATION:
-<recommendation>
-
-POTENTIAL_SAVING_PERCENT:
-<number>
-
-QUERY COST USD:
+Query Cost USD:
 {round(cost_usd,2)}
 
-QUERY:
+SQL Query:
 {query_text}
 """
 
-            response = model.generate_content(
-                prompt
+            response = model.generate_content(prompt)
+
+            result = response.text.strip()
+
+            # kadang Gemini menambahkan ```json
+            result = result.replace("```json", "")
+            result = result.replace("```", "")
+            result = result.strip()
+
+            ai = json.loads(result)
+
+            severity = ai.get("severity", "LOW")
+            root_cause = ai.get("root_cause", "")
+            ai_summary = ai.get("ai_summary", "")
+            recommendation = ai.get("recommendation", "")
+            optimized_sql = ai.get("optimized_sql", "")
+            saving = float(
+                ai.get(
+                    "potential_saving_percent",
+                    0
+                )
             )
 
-            result = response.text
-
-            severity = extract(
-                r"SEVERITY:\s*(.*?)\n",
-                result
+            estimated_saving_usd = round(
+                cost_usd * (saving / 100),
+                2
             )
 
-            root_cause = extract(
-                r"ROOT_CAUSE:\s*(.*?)\n",
-                result
+            estimated_saving_idr = round(
+                estimated_saving_usd * 16500,
+                0
             )
-
-            ai_summary = extract(
-                r"AI_SUMMARY:\s*(.*?)\n",
-                result
-            )
-
-            recommendation = extract(
-                r"RECOMMENDATION:\s*(.*?)\nPOTENTIAL_SAVING_PERCENT:",
-                result
-            )
-
-            saving = extract(
-                r"POTENTIAL_SAVING_PERCENT:\s*(\d+)",
-                result
-            )
-
-            if saving == "":
-                saving = 0
-            else:
-                saving = float(saving)
 
             payload = [{
-                "recommendation_id": str(
-                    uuid.uuid4()
-                ),
-                "query_id": row.query_id,
-                "severity": severity,
-                "root_cause": root_cause,
-                "ai_summary": ai_summary,
-                "recommendation": recommendation,
-                "optimized_sql": None,
-                "potential_saving_percent": saving,
-                "generated_at": datetime.utcnow().isoformat()
+
+                "recommendation_id":
+                    str(uuid.uuid4()),
+
+                "query_id":
+                    row.query_id,
+
+                "severity":
+                    severity,
+
+                "root_cause":
+                    root_cause,
+
+                "ai_summary":
+                    ai_summary,
+
+                "recommendation":
+                    recommendation,
+
+                "optimized_sql":
+                    optimized_sql,
+
+                "potential_saving_percent":
+                    saving,
+
+                "estimated_saving_usd":
+                    estimated_saving_usd,
+
+                "estimated_saving_idr":
+                    estimated_saving_idr,
+
+                "generated_at":
+                    datetime.utcnow().isoformat()
+
             }]
 
             errors = bq.insert_rows_json(
@@ -187,22 +181,24 @@ QUERY:
             if errors:
 
                 print(
-                    f"INSERT ERROR: {errors}"
+                    f"INSERT ERROR {row.query_id}"
                 )
+                print(errors)
 
             else:
 
                 analyzed += 1
 
                 print(
-                    f"SUCCESS query_id={row.query_id}"
+                    f"SUCCESS {row.query_id}"
                 )
 
         except Exception as e:
 
             print(
-                f"ERROR query_id={row.query_id}: {str(e)}"
+                f"FAILED {row.query_id}"
             )
+            print(str(e))
 
     return jsonify({
         "status": "SUCCESS",
