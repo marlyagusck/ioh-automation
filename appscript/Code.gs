@@ -1,0 +1,177 @@
+function doGet() {
+  return HtmlService
+    .createHtmlOutputFromFile("Dashboard")
+    .setTitle("FinOps AI Advisor");
+}
+
+const PROJECT_ID = "ck-finops-data-prd-in60";
+const DATASET = "finops_ai";
+const VIEW_NAME = "v_finops_dashboard_v2";
+const EMAIL_TABLE = "email_notification";
+
+function getAutomationStatus() {
+  const trigger = findAutoSendTrigger();
+  return {
+    enabled: !!trigger,
+    triggerId: trigger ? trigger.getUniqueId() : null
+  };
+}
+
+function setAutoSendEnabled(enabled) {
+  const existing = findAutoSendTrigger();
+
+  if (enabled) {
+    if (!existing) {
+      createAutoSendTrigger();
+    }
+  } else {
+    if (existing) {
+      ScriptApp.deleteTrigger(existing);
+    }
+  }
+
+  return getAutomationStatus();
+}
+
+function findAutoSendTrigger() {
+  const triggers = ScriptApp.getProjectTriggers();
+  return triggers.find(function(trigger) {
+    return trigger.getHandlerFunction() === 'runAutoSendBatch';
+  });
+}
+
+function createAutoSendTrigger() {
+  return ScriptApp.newTrigger('runAutoSendBatch')
+    .timeBased()
+    .everyHours(1)
+    .create();
+}
+
+function getDashboardData(fromDate, toDate, projectFilter, severityFilter) {
+
+  const TIMESTAMP_COLUMN = 'creation_time'; // change if your view uses a different timestamp column
+
+  const whereClauses = [];
+
+  if (fromDate && toDate) {
+    if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(fromDate) || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(toDate)) {
+      throw new Error('Invalid date format. Use YYYY-MM-DD');
+    }
+    whereClauses.push(`DATE(a.${TIMESTAMP_COLUMN}) BETWEEN DATE('${fromDate}') AND DATE('${toDate}')`);
+  } else if (fromDate) {
+    if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(fromDate)) throw new Error('Invalid date format. Use YYYY-MM-DD');
+    whereClauses.push(`DATE(a.${TIMESTAMP_COLUMN}) >= DATE('${fromDate}')`);
+  } else if (toDate) {
+    if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(toDate)) throw new Error('Invalid date format. Use YYYY-MM-DD');
+    whereClauses.push(`DATE(a.${TIMESTAMP_COLUMN}) <= DATE('${toDate}')`);
+  }
+
+  if (projectFilter) {
+    projectFilter = String(projectFilter).replace(/'/g, "''");
+    whereClauses.push(`a.project_id = '${projectFilter}'`);
+  }
+
+  if (severityFilter) {
+    severityFilter = String(severityFilter).replace(/'/g, "''");
+    whereClauses.push(`a.severity = '${severityFilter}'`);
+  }
+
+  const whereSql = whereClauses.length ? '\nWHERE ' + whereClauses.join(' AND ') + '\n' : '\n';
+
+  const sql = `
+SELECT * EXCEPT(rn) FROM (
+  SELECT
+    a.query_id,
+    a.project_id,
+    a.user_email,
+    a.query_text,
+    a.severity,
+    a.root_cause,
+    a.ai_summary,
+    a.recommendation,
+    a.optimized_sql,
+    a.potential_saving_percent,
+    a.total_bytes_billed,
+    a.total_slot_ms,
+    b.cc_email,
+    ROW_NUMBER() OVER (PARTITION BY a.query_id ORDER BY a.total_bytes_billed DESC) AS rn
+
+  FROM \`${PROJECT_ID}.${DATASET}.${VIEW_NAME}\` a
+
+  LEFT JOIN \`${PROJECT_ID}.${DATASET}.${EMAIL_TABLE}\` b
+  ON a.query_id = b.query_id
+  ${whereSql}
+)
+WHERE rn = 1
+ORDER BY total_bytes_billed DESC
+LIMIT 100
+`;
+
+  const result = BigQuery.Jobs.query(
+    {
+      query: sql,
+      useLegacySql: false
+    },
+    PROJECT_ID
+  );
+
+  const rows = [];
+
+  if (result.rows) {
+
+    result.rows.forEach(function(r){
+
+      rows.push({
+
+        query_id: r.f[0].v,
+
+        project_id: r.f[1].v,
+
+        user_email: r.f[2].v,
+
+        query_text: r.f[3].v,
+
+        severity: r.f[4].v,
+
+        root_cause: r.f[5].v,
+
+        ai_summary: r.f[6].v,
+
+        recommendation: r.f[7].v,
+
+        optimized_sql: r.f[8].v,
+
+        saving:
+          Number(r.f[9].v || 0),
+
+        bytes:
+          Number(r.f[10].v || 0),
+
+        tb:
+          (
+            Number(r.f[10].v || 0)
+            / 1099511627776
+          ).toFixed(2),
+
+        slot_ms:
+          Number(r.f[11].v || 0),
+
+        cc_email:
+          r.f[12]
+          ? r.f[12].v
+          : "",
+
+        status:
+          r.f[8].v
+          ? "OPTIMIZED"
+          : "PENDING"
+
+      });
+
+    });
+
+  }
+
+  return rows;
+
+}
