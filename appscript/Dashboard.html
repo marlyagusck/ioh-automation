@@ -299,6 +299,16 @@ font-size:0.85rem;
         </div>
       </div>
     </div>
+    <div class="col-md-6">
+      <div>
+        <label class="form-label mb-1">Sent Email Report</label>
+        <div class="d-flex gap-2">
+          <button id="viewSentEmailsBtn" class="btn btn-outline-info" onclick="viewSentEmails()">
+            View Sent Emails
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -515,6 +525,64 @@ onclick="sendEmail()">
 Send Email
 
 </button>
+
+</div>
+
+</div>
+
+</div>
+
+</div>
+
+</div>
+
+<div class="modal fade"
+id="sentEmailModal"
+tabindex="-1">
+
+<div class="modal-dialog modal-xl">
+
+<div class="modal-content bg-dark text-white">
+
+<div class="modal-header">
+
+<h5>
+Sent Email Report
+</h5>
+
+<button
+class="btn-close btn-close-white"
+data-bs-dismiss="modal">
+</button>
+
+</div>
+
+<div class="modal-body">
+
+<div class="table-responsive">
+
+<table class="table table-dark table-hover">
+
+<thead>
+
+<tr>
+<th>#</th>
+<th>Recipient</th>
+<th>CC</th>
+<th>Project</th>
+<th>Severity</th>
+<th>Query ID</th>
+<th>Sent At</th>
+<th>Acknowledged</th>
+</tr>
+
+</thead>
+
+<tbody id="sentEmailTableBody">
+
+</tbody>
+
+</table>
 
 </div>
 
@@ -992,6 +1060,72 @@ function copyOptimizedSql(){
         btn.classList.add("btn-outline-primary");
 
     },2000);
+
+}
+
+function escapeHtml(str){
+    return String(str == null ? "" : str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+}
+
+function formatTimestamp(value){
+    if(!value) return "-";
+
+    const seconds = Number(value);
+    if(isNaN(seconds)) return escapeHtml(value);
+
+    const d = new Date(seconds * 1000);
+    const pad = n => String(n).padStart(2, "0");
+
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function viewSentEmails(){
+
+    const fromDate = document.getElementById("fromDate").value;
+    const toDate = document.getElementById("toDate").value;
+
+    const tbody = document.getElementById("sentEmailTableBody");
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center">Loading...</td></tr>';
+
+    new bootstrap.Modal(
+        document.getElementById("sentEmailModal")
+    ).show();
+
+    google.script.run
+        .withSuccessHandler(renderSentEmailTable)
+        .withFailureHandler(function(err){
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center">Failed to load sent emails.</td></tr>';
+            alert(err.message || "Failed to load sent email list.");
+        })
+        .getSentEmailList(fromDate, toDate);
+
+}
+
+function renderSentEmailTable(rows){
+
+    const tbody = document.getElementById("sentEmailTableBody");
+
+    if(!Array.isArray(rows) || rows.length === 0){
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center">No sent emails found for this date range.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = rows.map(function(r, index){
+        return `
+<tr>
+<td>${index + 1}</td>
+<td>${escapeHtml(r.recipient)}</td>
+<td>${escapeHtml(r.cc_email) || "-"}</td>
+<td>${escapeHtml(r.project_id) || "-"}</td>
+<td>${escapeHtml(r.severity) || "-"}</td>
+<td><code style="color:#93c5fd;">${escapeHtml(r.query_id)}</code></td>
+<td>${formatTimestamp(r.sent_at)}</td>
+<td>${r.acknowledged ? "Yes" : "No"}</td>
+</tr>`;
+    }).join("");
 
 }
 

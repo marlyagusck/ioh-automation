@@ -93,6 +93,9 @@ function sendRecommendationEmail(rowData, recipient, ccEmail, subject) {
       </p>
       <p><strong>Optimized SQL</strong></p>
       <pre style="background:#f3f4f6;padding:12px;border-radius:8px;white-space:pre-wrap;">${String(rowData.optimized_sql || "Waiting AI Optimization").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre>
+      <p style="background:#fef3c7;border-left:4px solid #f59e0b;padding:10px 14px;border-radius:4px;">
+        <strong>Note: To improve query efficiency and optimize BigQuery costs, we recommend using Agentspace (<a href="https://agentspace.ioh.co.id">agentspace.ioh.co.id</a>) before executing your SQL query. Agentspace can help generate and refine optimized SQL statements, reducing unnecessary data scans, improving query performance, and minimizing BigQuery processing costs.</strong>
+      </p>
       <p>Regards,<br>FinOps AI Advisor</p>
     </div>
   `;
@@ -157,6 +160,7 @@ function upsertEmailNotification(queryId, recipient, ccEmail, emailSent) {
         recipient = '${safeRecipient}',
         cc_email = '${safeCcEmail}',
         email_sent = ${sentFlag}
+        ${emailSent ? ", sent_at = CURRENT_TIMESTAMP()" : ""}
       WHERE query_id = '${safeQueryId}'
     `;
   } else {
@@ -168,6 +172,7 @@ function upsertEmailNotification(queryId, recipient, ccEmail, emailSent) {
         recipient,
         cc_email,
         email_sent,
+        sent_at,
         acknowledged
       )
       VALUES
@@ -177,6 +182,7 @@ function upsertEmailNotification(queryId, recipient, ccEmail, emailSent) {
         '${safeRecipient}',
         '${safeCcEmail}',
         ${sentFlag},
+        ${emailSent ? "CURRENT_TIMESTAMP()" : "NULL"},
         FALSE
       )
     `;

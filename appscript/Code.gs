@@ -175,3 +175,73 @@ LIMIT 100
   return rows;
 
 }
+
+function getSentEmailList(fromDate, toDate) {
+
+  const whereClauses = ['b.email_sent = TRUE'];
+
+  if (fromDate && toDate) {
+    if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(fromDate) || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(toDate)) {
+      throw new Error('Invalid date format. Use YYYY-MM-DD');
+    }
+    whereClauses.push(`DATE(b.sent_at) BETWEEN DATE('${fromDate}') AND DATE('${toDate}')`);
+  } else if (fromDate) {
+    if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(fromDate)) throw new Error('Invalid date format. Use YYYY-MM-DD');
+    whereClauses.push(`DATE(b.sent_at) >= DATE('${fromDate}')`);
+  } else if (toDate) {
+    if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(toDate)) throw new Error('Invalid date format. Use YYYY-MM-DD');
+    whereClauses.push(`DATE(b.sent_at) <= DATE('${toDate}')`);
+  }
+
+  const whereSql = 'WHERE ' + whereClauses.join(' AND ');
+
+  const sql = `
+SELECT
+  b.notification_id,
+  b.query_id,
+  b.recipient,
+  b.cc_email,
+  b.sent_at,
+  b.acknowledged,
+  a.project_id,
+  a.severity
+FROM \`${PROJECT_ID}.${DATASET}.${EMAIL_TABLE}\` b
+LEFT JOIN \`${PROJECT_ID}.${DATASET}.${VIEW_NAME}\` a
+  ON a.query_id = b.query_id
+${whereSql}
+ORDER BY b.sent_at DESC
+LIMIT 500
+`;
+
+  const result = BigQuery.Jobs.query(
+    {
+      query: sql,
+      useLegacySql: false
+    },
+    PROJECT_ID
+  );
+
+  const rows = [];
+
+  if (result.rows) {
+
+    result.rows.forEach(function(r){
+
+      rows.push({
+        notification_id: r.f[0].v,
+        query_id: r.f[1].v,
+        recipient: r.f[2].v,
+        cc_email: r.f[3].v || "",
+        sent_at: r.f[4].v,
+        acknowledged: r.f[5].v === "true",
+        project_id: r.f[6].v || "",
+        severity: r.f[7].v || ""
+      });
+
+    });
+
+  }
+
+  return rows;
+
+}
