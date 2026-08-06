@@ -18,6 +18,10 @@ CREATE TABLE `finops_ai.ai_recommendation`
 
   potential_saving_percent FLOAT64,
 
+  estimated_saving_usd FLOAT64,
+
+  estimated_saving_idr FLOAT64,
+
   generated_at TIMESTAMP
 )
 PARTITION BY DATE(generated_at);

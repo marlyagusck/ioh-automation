@@ -11,6 +11,9 @@ from datetime import datetime
 PROJECT_ID = "ck-finops-data-prd-in60"
 LOCATION = "asia-southeast1"
 
+BQ_PRICE_PER_TB_USD = 6.25  # BigQuery on-demand analysis price. Update if Google changes pricing.
+USD_TO_IDR_RATE = 17900     # Kurs tetap untuk estimasi. Update berkala sesuai kurs berjalan.
+
 app = Flask(__name__)
 
 bq = bigquery.Client(
@@ -80,7 +83,7 @@ def run():
             cost_usd = (
                 row.total_bytes_billed /
                 (1024 ** 4)
-            ) * 5
+            ) * BQ_PRICE_PER_TB_USD
 
             prompt = f"""
 You are a Senior Google BigQuery FinOps Consultant.
@@ -132,7 +135,7 @@ SQL Query:
             )
 
             estimated_saving_idr = round(
-                estimated_saving_usd * 16500,
+                estimated_saving_usd * USD_TO_IDR_RATE,
                 0
             )
 
