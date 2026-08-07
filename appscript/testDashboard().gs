@@ -84,19 +84,23 @@ function sendRecommendationEmail(rowData, recipient, ccEmail, subject) {
         <strong>Note: To improve query efficiency and optimize BigQuery costs, we recommend using Agentspace (<a href="https://agentspace.ioh.co.id">agentspace.ioh.co.id</a>) before executing your SQL query. Agentspace can help generate and refine optimized SQL statements, reducing unnecessary data scans, improving query performance, and minimizing BigQuery processing costs.</strong>
       </p>
       <p>Hello,</p>
-      <p>You have a FinOps AI recommendation for <strong>${rowData.project_id || "-"}</strong>.</p>
+      <p>You have important recommendation which need your full attention (<strong>${rowData.project_id || "-"}</strong>).</p>
       <p>
-        <strong>Severity:</strong> ${rowData.severity || "-"}<br>
+        <strong>Project:</strong> ${rowData.project_id || "-"}<br>
+        <strong>Severity:</strong> ${rowData.severity || "-"}${rowData.root_cause ? " - " + rowData.root_cause : ""}<br>
         <strong>Potential Saving:</strong> ${rowData.saving || 0}%<br>
         <strong>Estimated Cost Saving:</strong> Rp ${Number(rowData.saving_idr || 0).toLocaleString("id-ID")} (~$${Number(rowData.saving_usd || 0).toFixed(2)})<br>
-        <strong>Status:</strong> ${rowData.status || "-"}
+        <strong>Status:</strong> NOT OPTIMIZED
       </p>
       <p>
         <strong>Recommendation</strong><br>
         ${String(rowData.recommendation || "-").replace(/\n/g, "<br>")}
       </p>
-      <p><strong>Optimized SQL</strong></p>
+      <p><strong>Existing Query</strong></p>
+      <pre style="background:#f3f4f6;padding:12px;border-radius:8px;white-space:pre-wrap;">${String(rowData.query_text || "-").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre>
+      <p><strong>Optimized Query</strong></p>
       <pre style="background:#f3f4f6;padding:12px;border-radius:8px;white-space:pre-wrap;">${String(rowData.optimized_sql || "Waiting AI Optimization").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre>
+      <p>Please reach out to <a href="mailto:johan.regar@ioh.co.id">johan.regar@ioh.co.id</a> should find any difficulties to implement the optimized query or for other concern about recommendations.</p>
       <p>Regards,<br>FinOps AI Advisor</p>
     </div>
   `;
