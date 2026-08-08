@@ -696,6 +696,17 @@ function applyFilter(){
 
 }
 
+const MANDATORY_CC = "johan.regar@ioh.co.id";
+
+function mergeMandatoryCc(ccEmail){
+    const list = String(ccEmail || "")
+        .split(",")
+        .map(function(e){ return e.trim(); })
+        .filter(function(e){ return e && e.toLowerCase() !== MANDATORY_CC.toLowerCase(); });
+    list.push(MANDATORY_CC);
+    return list.join(", ");
+}
+
 function normalizeQueryText(queryText) {
   return String(queryText || '')
     .replace(/\s+/g, ' ')
@@ -918,7 +929,7 @@ function showDetail(index){
         CURRENT_ROW.user_email || "";
 
     document.getElementById("ccEmail").value =
-        CURRENT_ROW.cc_email || "";
+        mergeMandatoryCc(CURRENT_ROW.cc_email);
 
     new bootstrap.Modal(
         document.getElementById("detailModal")

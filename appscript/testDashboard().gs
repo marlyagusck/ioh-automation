@@ -76,7 +76,14 @@ function sendRecommendationEmail(rowData, recipient, ccEmail, subject) {
   }
 
   const emailSubject = subject || `[FinOps AI] ${rowData.project_id || "Recommendation"}`;
-  const senderEmail = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail();
+
+  const MANDATORY_CC = "johan.regar@ioh.co.id";
+  const ccList = String(ccEmail || "")
+    .split(",")
+    .map(function(e) { return e.trim(); })
+    .filter(function(e) { return e && e.toLowerCase() !== MANDATORY_CC.toLowerCase(); });
+  ccList.push(MANDATORY_CC);
+  const finalCcEmail = ccList.join(", ");
 
   const htmlBody = `
     <div style="font-family:Segoe UI, Arial, sans-serif; color:#111827;">
@@ -106,9 +113,8 @@ function sendRecommendationEmail(rowData, recipient, ccEmail, subject) {
   `;
 
   const messageParts = [
-    `From: ${senderEmail}`,
     `To: ${recipient}`,
-    ccEmail ? `Cc: ${ccEmail}` : "",
+    `Cc: ${finalCcEmail}`,
     "MIME-Version: 1.0",
     "Content-Type: text/html; charset=UTF-8",
     `Subject: ${emailSubject}`,
@@ -126,7 +132,7 @@ function sendRecommendationEmail(rowData, recipient, ccEmail, subject) {
     "me"
   );
 
-  upsertEmailNotification(rowData.query_id, recipient, ccEmail, true);
+  upsertEmailNotification(rowData.query_id, recipient, finalCcEmail, true);
 
   return {
     success: true,
