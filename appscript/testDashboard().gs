@@ -210,7 +210,11 @@ function upsertEmailNotification(queryId, recipient, ccEmail, emailSent) {
 
 function fetchPendingEmailRecommendations(fromDate, toDate, projectFilter, severityFilter, limit) {
   const TIMESTAMP_COLUMN = 'creation_time';
-  const whereClauses = ['(a.optimized_sql IS NULL OR a.optimized_sql = "")'];
+  const whereClauses = [
+    'a.optimized_sql IS NOT NULL',
+    'a.optimized_sql != ""',
+    '(b.email_sent IS NULL OR b.email_sent = FALSE)'
+  ];
 
   if (fromDate && toDate) {
     whereClauses.push(`DATE(a.${TIMESTAMP_COLUMN}) BETWEEN DATE('${fromDate}') AND DATE('${toDate}')`);
@@ -233,30 +237,35 @@ function fetchPendingEmailRecommendations(fromDate, toDate, projectFilter, sever
   const rowLimit = Number(limit) || 100;
 
   const sql = `
-SELECT * EXCEPT(rn) FROM (
-  SELECT
-    a.query_id,
-    a.project_id,
-    a.user_email,
-    a.query_text,
-    a.severity,
-    a.root_cause,
-    a.ai_summary,
-    a.recommendation,
-    a.optimized_sql,
-    a.potential_saving_percent,
-    a.estimated_saving_usd,
-    a.estimated_saving_idr,
-    a.total_bytes_billed,
-    a.total_slot_ms,
-    b.cc_email,
-    ROW_NUMBER() OVER (PARTITION BY a.query_id ORDER BY a.total_bytes_billed DESC) AS rn
-  FROM \`${PROJECT_ID}.${DATASET}.${VIEW_NAME}\` a
-  LEFT JOIN \`${PROJECT_ID}.${DATASET}.${EMAIL_TABLE}\` b
-    ON a.query_id = b.query_id
-  ${whereSql}
+SELECT * EXCEPT(project_rn) FROM (
+  SELECT * EXCEPT(rn),
+    ROW_NUMBER() OVER (PARTITION BY project_id ORDER BY total_bytes_billed DESC) AS project_rn
+  FROM (
+    SELECT
+      a.query_id,
+      a.project_id,
+      a.user_email,
+      a.query_text,
+      a.severity,
+      a.root_cause,
+      a.ai_summary,
+      a.recommendation,
+      a.optimized_sql,
+      a.potential_saving_percent,
+      a.estimated_saving_usd,
+      a.estimated_saving_idr,
+      a.total_bytes_billed,
+      a.total_slot_ms,
+      b.cc_email,
+      ROW_NUMBER() OVER (PARTITION BY a.query_id ORDER BY a.total_bytes_billed DESC) AS rn
+    FROM \`${PROJECT_ID}.${DATASET}.${VIEW_NAME}\` a
+    LEFT JOIN \`${PROJECT_ID}.${DATASET}.${EMAIL_TABLE}\` b
+      ON a.query_id = b.query_id
+    ${whereSql}
+  )
+  WHERE rn = 1
 )
-WHERE rn = 1
+WHERE project_rn = 1
 ORDER BY total_bytes_billed DESC
 LIMIT ${rowLimit}
 `;

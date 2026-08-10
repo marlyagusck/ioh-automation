@@ -12,6 +12,40 @@ const EMAIL_TABLE = "email_notification";
 const AUTO_SEND_INTERVAL_PROPERTY = 'AUTO_SEND_INTERVAL_MINUTES';
 const DEFAULT_AUTO_SEND_INTERVAL_MINUTES = 60;
 
+const BQ_PRICE_PER_TB_USD = 6.25;
+const USD_TO_IDR_RATE = 17900;
+
+function dryRunQuery(sql, projectId) {
+
+  if (!sql || !String(sql).trim()) {
+    throw new Error('SQL query is required.');
+  }
+
+  const targetProject = projectId || PROJECT_ID;
+
+  const result = BigQuery.Jobs.query(
+    {
+      query: sql,
+      useLegacySql: false,
+      dryRun: true
+    },
+    targetProject
+  );
+
+  const totalBytesProcessed = Number(result.totalBytesProcessed || 0);
+  const tb = totalBytesProcessed / 1099511627776;
+  const costUsd = tb * BQ_PRICE_PER_TB_USD;
+  const costIdr = costUsd * USD_TO_IDR_RATE;
+
+  return {
+    totalBytesProcessed: totalBytesProcessed,
+    tb: tb,
+    costUsd: costUsd,
+    costIdr: costIdr
+  };
+
+}
+
 function getAutomationStatus() {
   const trigger = findAutoSendTrigger();
   const storedInterval = Number(PropertiesService.getScriptProperties().getProperty(AUTO_SEND_INTERVAL_PROPERTY));

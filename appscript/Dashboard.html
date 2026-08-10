@@ -283,6 +283,17 @@ font-size:0.85rem;
       </div>
     </div>
 
+    <div class="card-custom mt-3">
+      <h5 class="mb-3">BigQuery Dry Run</h5>
+      <div class="mb-2">
+        <textarea id="dryRunSql" class="form-control" rows="4" placeholder="Paste a SQL query here to estimate bytes scanned and cost before running it (no data is scanned or billed)."></textarea>
+      </div>
+      <div class="d-flex gap-2 align-items-center flex-wrap">
+        <button id="dryRunBtn" class="btn btn-outline-warning" onclick="runDryRun()">Run Dry Run</button>
+        <span id="dryRunResult" class="text-white-50"></span>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -576,6 +587,12 @@ Sent Email Report
 </h5>
 
 <button
+class="btn btn-sm btn-success me-2"
+onclick="exportSentEmailsToCsv()">
+Export CSV
+</button>
+
+<button
 class="btn-close btn-close-white"
 data-bs-dismiss="modal">
 </button>
@@ -583,6 +600,34 @@ data-bs-dismiss="modal">
 </div>
 
 <div class="modal-body">
+
+<div class="d-flex gap-2 align-items-end flex-wrap mb-3">
+
+<div>
+<label class="form-label mb-1 small">Preset</label>
+<select id="sentEmailPreset" class="form-select form-select-sm" onchange="onSentEmailPresetChange()">
+<option value="1">Last 1 Day</option>
+<option value="7" selected>Last 7 Days</option>
+<option value="30">Last 30 Days</option>
+<option value="custom">Custom</option>
+</select>
+</div>
+
+<div>
+<label class="form-label mb-1 small">From</label>
+<input type="date" id="sentEmailFromDate" class="form-control form-control-sm" disabled>
+</div>
+
+<div>
+<label class="form-label mb-1 small">To</label>
+<input type="date" id="sentEmailToDate" class="form-control form-control-sm" disabled>
+</div>
+
+<div>
+<button class="btn btn-sm btn-primary" onclick="applySentEmailFilter()">Apply</button>
+</div>
+
+</div>
 
 <div class="table-responsive">
 
@@ -1174,17 +1219,82 @@ function formatTimestamp(value){
     return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
-function viewSentEmails(){
+function runDryRun(){
 
-    const fromDate = document.getElementById("fromDate").value;
-    const toDate = document.getElementById("toDate").value;
+    const sql = document.getElementById("dryRunSql").value.trim();
+    const resultEl = document.getElementById("dryRunResult");
+    const btn = document.getElementById("dryRunBtn");
+
+    if(!sql){
+        alert("Please enter a SQL query first.");
+        return;
+    }
+
+    btn.disabled = true;
+    btn.innerText = "Running...";
+    resultEl.className = "text-white-50";
+    resultEl.innerText = "";
+
+    google.script.run
+        .withSuccessHandler(function(res){
+            btn.disabled = false;
+            btn.innerText = "Run Dry Run";
+
+            const tb = Number(res.tb || 0).toFixed(4);
+            const costUsd = Number(res.costUsd || 0).toFixed(2);
+            const costIdr = Math.round(Number(res.costIdr || 0)).toLocaleString("id-ID");
+
+            resultEl.className = "text-info";
+            resultEl.innerText = `Estimated: ${tb} TB scanned, ~$${costUsd} (Rp ${costIdr})`;
+        })
+        .withFailureHandler(function(err){
+            btn.disabled = false;
+            btn.innerText = "Run Dry Run";
+
+            resultEl.className = "text-danger";
+            resultEl.innerText = err.message || "Dry run failed.";
+        })
+        .dryRunQuery(sql);
+
+}
+
+function computeSentEmailRange(preset){
+    const today = new Date();
+    const n = Number(preset) || 7;
+    const from = new Date();
+    from.setDate(today.getDate() - (n - 1));
+    return { fromDate: formatDate(from), toDate: formatDate(today) };
+}
+
+function onSentEmailPresetChange(){
+    const preset = document.getElementById("sentEmailPreset").value;
+    const fromInput = document.getElementById("sentEmailFromDate");
+    const toInput = document.getElementById("sentEmailToDate");
+
+    if(preset === "custom"){
+        fromInput.disabled = false;
+        toInput.disabled = false;
+        return;
+    }
+
+    fromInput.disabled = true;
+    toInput.disabled = true;
+
+    const range = computeSentEmailRange(preset);
+    fromInput.value = range.fromDate;
+    toInput.value = range.toDate;
+}
+
+function applySentEmailFilter(){
+    const fromDate = document.getElementById("sentEmailFromDate").value;
+    const toDate = document.getElementById("sentEmailToDate").value;
+    fetchSentEmailList(fromDate, toDate);
+}
+
+function fetchSentEmailList(fromDate, toDate){
 
     const tbody = document.getElementById("sentEmailTableBody");
     tbody.innerHTML = '<tr><td colspan="8" class="text-center">Loading...</td></tr>';
-
-    new bootstrap.Modal(
-        document.getElementById("sentEmailModal")
-    ).show();
 
     google.script.run
         .withSuccessHandler(renderSentEmailTable)
@@ -1196,7 +1306,30 @@ function viewSentEmails(){
 
 }
 
+function viewSentEmails(){
+
+    const preset = document.getElementById("sentEmailPreset");
+    preset.value = "7";
+
+    const range = computeSentEmailRange("7");
+    document.getElementById("sentEmailFromDate").value = range.fromDate;
+    document.getElementById("sentEmailToDate").value = range.toDate;
+    document.getElementById("sentEmailFromDate").disabled = true;
+    document.getElementById("sentEmailToDate").disabled = true;
+
+    new bootstrap.Modal(
+        document.getElementById("sentEmailModal")
+    ).show();
+
+    fetchSentEmailList(range.fromDate, range.toDate);
+
+}
+
+let lastSentEmailRows = [];
+
 function renderSentEmailTable(rows){
+
+    lastSentEmailRows = Array.isArray(rows) ? rows : [];
 
     const tbody = document.getElementById("sentEmailTableBody");
 
@@ -1218,6 +1351,47 @@ function renderSentEmailTable(rows){
 <td>${r.acknowledged ? "Yes" : "No"}</td>
 </tr>`;
     }).join("");
+
+}
+
+function csvEscape(value){
+    const str = value === null || value === undefined ? "" : String(value);
+    return /[",\n]/.test(str) ? '"' + str.replace(/"/g, '""') + '"' : str;
+}
+
+function exportSentEmailsToCsv(){
+
+    if(lastSentEmailRows.length === 0){
+        alert("No sent emails to export.");
+        return;
+    }
+
+    const headers = ["Recipient", "CC", "Project", "Severity", "Query ID", "Sent At", "Acknowledged"];
+
+    const lines = [headers.join(",")];
+
+    lastSentEmailRows.forEach(function(r){
+        lines.push([
+            csvEscape(r.recipient),
+            csvEscape(r.cc_email),
+            csvEscape(r.project_id),
+            csvEscape(r.severity),
+            csvEscape(r.query_id),
+            csvEscape(formatTimestamp(r.sent_at)),
+            csvEscape(r.acknowledged ? "Yes" : "No")
+        ].join(","));
+    });
+
+    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `sent-email-report-${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
 
 }
 
