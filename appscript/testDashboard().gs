@@ -75,7 +75,7 @@ function sendRecommendationEmail(rowData, recipient, ccEmail, subject) {
     throw new Error("Recipient email is required.");
   }
 
-  const emailSubject = subject || `[FinOps AI] ${rowData.project_id || "Recommendation"}`;
+  const emailSubject = subject || `[BQ AI Advisor] Query Optimization Recommendation – ${rowData.project_id || "Recommendation"}`;
 
   const MANDATORY_CC = "johan.regar@ioh.co.id";
   const ccList = String(ccEmail || "")
@@ -86,29 +86,48 @@ function sendRecommendationEmail(rowData, recipient, ccEmail, subject) {
   const finalCcEmail = ccList.join(", ");
 
   const htmlBody = `
-    <div style="font-family:Segoe UI, Arial, sans-serif; color:#111827;">
-      <p style="background:#fef3c7;border-left:4px solid #f59e0b;padding:10px 14px;border-radius:4px;">
-        <strong>Note: To improve query efficiency and optimize BigQuery costs, we recommend using Agentspace (<a href="https://agentspace.ioh.co.id">agentspace.ioh.co.id</a>) before executing your SQL query. Agentspace can help generate and refine optimized SQL statements, reducing unnecessary data scans, improving query performance, and minimizing BigQuery processing costs.</strong>
+    <div style="font-family:Segoe UI, Arial, sans-serif; color:#111827; max-width:720px;">
+
+      <p style="background:#fef3c7;border-left:4px solid #f59e0b;padding:12px 16px;border-radius:4px;font-size:14px;line-height:1.6;">
+        <strong>Note:</strong> To improve query efficiency and optimize BigQuery costs, we recommend using
+        <strong>Agentspace</strong> (<a href="https://agentspace.ioh.co.id" style="color:#b45309;">agentspace.ioh.co.id</a>)
+        before executing your SQL query. Agentspace can help generate and refine optimized SQL statements,
+        reducing unnecessary data scans, improving query performance, and minimizing BigQuery processing costs.
       </p>
-      <p>Hello,</p>
-      <p>You have important recommendation which need your full attention (<strong>${rowData.project_id || "-"}</strong>).</p>
-      <p>
+
+      <p style="font-size:15px;">Hello,</p>
+
+      <p style="font-size:14px;line-height:1.6;">
+        The BQ AI Advisor has identified an optimization opportunity for the following project.
+      </p>
+
+      <p style="font-size:14px;line-height:1.8;">
         <strong>Project:</strong> ${rowData.project_id || "-"}<br>
-        <strong>Severity:</strong> ${rowData.severity || "-"}${rowData.root_cause ? " - " + rowData.root_cause : ""}<br>
-        <strong>Potential Saving:</strong> ${rowData.saving || 0}%<br>
-        <strong>Estimated Cost Saving:</strong> Rp ${Number(rowData.saving_idr || 0).toLocaleString("id-ID")} (~$${Number(rowData.saving_usd || 0).toFixed(2)})<br>
+        <strong>Severity:</strong> ${rowData.severity || "-"}${rowData.root_cause ? " — " + rowData.root_cause : ""}<br>
         <strong>Status:</strong> NOT OPTIMIZED
       </p>
-      <p>
+
+      <p style="font-size:14px;line-height:1.6;">
         <strong>Recommendation</strong><br>
         ${String(rowData.recommendation || "-").replace(/\n/g, "<br>")}
       </p>
-      <p><strong>Existing Query</strong></p>
-      <pre style="background:#f3f4f6;padding:12px;border-radius:8px;white-space:pre-wrap;">${String(rowData.query_text || "-").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre>
-      <p><strong>Optimized Query</strong></p>
-      <pre style="background:#f3f4f6;padding:12px;border-radius:8px;white-space:pre-wrap;">${String(rowData.optimized_sql || "Waiting AI Optimization").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre>
-      <p>Please reach out to <a href="mailto:johan.regar@ioh.co.id">johan.regar@ioh.co.id</a> should find any difficulties to implement the optimized query or for other concern about recommendations.</p>
-      <p>Regards,<br>FinOps AI Advisor</p>
+
+      <p style="font-size:14px;"><strong>Existing Query</strong></p>
+      <pre style="background:#f3f4f6;padding:14px;border-radius:8px;white-space:pre-wrap;font-size:13px;line-height:1.5;">${String(rowData.query_text || "-").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre>
+
+      <p style="font-size:14px;"><strong>Optimized Query</strong></p>
+      <pre style="background:#f3f4f6;padding:14px;border-radius:8px;white-space:pre-wrap;font-size:13px;line-height:1.5;">${String(rowData.optimized_sql || "Waiting AI Optimization").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre>
+
+      <p style="font-size:14px;line-height:1.6;">
+        Please reach out to <a href="mailto:johan.regar@ioh.co.id">johan.regar@ioh.co.id</a>
+        should you find any difficulties implementing the optimized query or have other concerns about these recommendations.
+      </p>
+
+      <p style="font-size:14px;">
+        Regards,<br>
+        <strong>BQ AI Advisor</strong>
+      </p>
+
     </div>
   `;
 
@@ -210,7 +229,11 @@ function upsertEmailNotification(queryId, recipient, ccEmail, emailSent) {
 
 function fetchPendingEmailRecommendations(fromDate, toDate, projectFilter, severityFilter, limit) {
   const TIMESTAMP_COLUMN = 'creation_time';
-  const whereClauses = ['(a.optimized_sql IS NULL OR a.optimized_sql = "")'];
+  const whereClauses = [
+    'a.optimized_sql IS NOT NULL',
+    'a.optimized_sql != ""',
+    '(b.email_sent IS NULL OR b.email_sent = FALSE)'
+  ];
 
   if (fromDate && toDate) {
     whereClauses.push(`DATE(a.${TIMESTAMP_COLUMN}) BETWEEN DATE('${fromDate}') AND DATE('${toDate}')`);
@@ -233,30 +256,35 @@ function fetchPendingEmailRecommendations(fromDate, toDate, projectFilter, sever
   const rowLimit = Number(limit) || 100;
 
   const sql = `
-SELECT * EXCEPT(rn) FROM (
-  SELECT
-    a.query_id,
-    a.project_id,
-    a.user_email,
-    a.query_text,
-    a.severity,
-    a.root_cause,
-    a.ai_summary,
-    a.recommendation,
-    a.optimized_sql,
-    a.potential_saving_percent,
-    a.estimated_saving_usd,
-    a.estimated_saving_idr,
-    a.total_bytes_billed,
-    a.total_slot_ms,
-    b.cc_email,
-    ROW_NUMBER() OVER (PARTITION BY a.query_id ORDER BY a.total_bytes_billed DESC) AS rn
-  FROM \`${PROJECT_ID}.${DATASET}.${VIEW_NAME}\` a
-  LEFT JOIN \`${PROJECT_ID}.${DATASET}.${EMAIL_TABLE}\` b
-    ON a.query_id = b.query_id
-  ${whereSql}
+SELECT * EXCEPT(project_rn) FROM (
+  SELECT * EXCEPT(rn),
+    ROW_NUMBER() OVER (PARTITION BY project_id ORDER BY total_bytes_billed DESC) AS project_rn
+  FROM (
+    SELECT
+      a.query_id,
+      a.project_id,
+      a.user_email,
+      a.query_text,
+      a.severity,
+      a.root_cause,
+      a.ai_summary,
+      a.recommendation,
+      a.optimized_sql,
+      a.potential_saving_percent,
+      a.estimated_saving_usd,
+      a.estimated_saving_idr,
+      a.total_bytes_billed,
+      a.total_slot_ms,
+      b.cc_email,
+      ROW_NUMBER() OVER (PARTITION BY a.query_id ORDER BY a.total_bytes_billed DESC) AS rn
+    FROM \`${PROJECT_ID}.${DATASET}.${VIEW_NAME}\` a
+    LEFT JOIN \`${PROJECT_ID}.${DATASET}.${EMAIL_TABLE}\` b
+      ON a.query_id = b.query_id
+    ${whereSql}
+  )
+  WHERE rn = 1
 )
-WHERE rn = 1
+WHERE project_rn = 1
 ORDER BY total_bytes_billed DESC
 LIMIT ${rowLimit}
 `;
@@ -301,7 +329,12 @@ function sendPendingEmailRecommendations(fromDate, toDate, projectFilter, severi
 
   rows.forEach(function(row) {
     try {
-      const response = sendRecommendationEmail(row, row.user_email, row.cc_email, `[FinOps AI] ${row.project_id || 'Recommendation'}`);
+      const response = sendRecommendationEmail(
+        row,
+        row.user_email,
+        row.cc_email,
+        `[BQ AI Advisor] Query Optimization Recommendation – ${row.project_id || 'Recommendation'}`
+      );
       results.push({ query_id: row.query_id, success: true, message: response.message });
     } catch (err) {
       results.push({ query_id: row.query_id, success: false, message: err.message });
@@ -315,6 +348,6 @@ function sendPendingEmailRecommendations(fromDate, toDate, projectFilter, severi
 }
 
 function runAutoSendBatch() {
-  // Use this helper to run a scheduled batch later.
+  // Scheduled batch trigger handler
   return sendPendingEmailRecommendations(null, null, '', '', 50);
 }

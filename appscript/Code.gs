@@ -12,6 +12,43 @@ const EMAIL_TABLE = "email_notification";
 const AUTO_SEND_INTERVAL_PROPERTY = 'AUTO_SEND_INTERVAL_MINUTES';
 const DEFAULT_AUTO_SEND_INTERVAL_MINUTES = 60;
 
+const BQ_PRICE_PER_TB_USD = 6.25;
+const BQ_SLOT_COMMITMENT_RATE_USD = 0.05;
+const BQ_SLOT_AUTOSCALE_RATE_USD = 0.06;
+const USD_TO_IDR_RATE = 18000;
+const INFO_SCHEMA_REGION = 'region-asia-southeast2';
+
+function dryRunQuery(sql, projectId) {
+
+  if (!sql || !String(sql).trim()) {
+    throw new Error('SQL query is required.');
+  }
+
+  const targetProject = projectId || PROJECT_ID;
+
+  const result = BigQuery.Jobs.query(
+    {
+      query: sql,
+      useLegacySql: false,
+      dryRun: true
+    },
+    targetProject
+  );
+
+  const totalBytesProcessed = Number(result.totalBytesProcessed || 0);
+  const tb = totalBytesProcessed / 1099511627776;
+  const costUsd = tb * BQ_PRICE_PER_TB_USD;
+  const costIdr = costUsd * USD_TO_IDR_RATE;
+
+  return {
+    totalBytesProcessed: totalBytesProcessed,
+    tb: tb,
+    costUsd: costUsd,
+    costIdr: costIdr
+  };
+
+}
+
 function getAutomationStatus() {
   const trigger = findAutoSendTrigger();
   const storedInterval = Number(PropertiesService.getScriptProperties().getProperty(AUTO_SEND_INTERVAL_PROPERTY));
@@ -192,6 +229,107 @@ LIMIT 100
     });
 
   }
+
+  return rows;
+
+}
+
+function runBigQuerySync(sql, projectId, timeoutMs) {
+
+  let queryResult = BigQuery.Jobs.query(
+    {
+      query: sql,
+      useLegacySql: false,
+      timeoutMs: timeoutMs || 30000
+    },
+    projectId
+  );
+
+  const jobId = queryResult.jobReference.jobId;
+  const jobLocation = queryResult.jobReference.location;
+
+  while (!queryResult.jobComplete) {
+    Utilities.sleep(1000);
+    queryResult = BigQuery.Jobs.getQueryResults(projectId, jobId, { location: jobLocation });
+  }
+
+  let rows = queryResult.rows || [];
+
+  while (queryResult.pageToken) {
+    queryResult = BigQuery.Jobs.getQueryResults(projectId, jobId, {
+      location: jobLocation,
+      pageToken: queryResult.pageToken
+    });
+    rows = rows.concat(queryResult.rows || []);
+  }
+
+  return rows;
+
+}
+
+function getCostUsageSummary(fromDate, toDate) {
+
+  const whereClauses = [
+    `job_type = 'QUERY'`,
+    `statement_type != 'SCRIPT'`,
+    `state = 'DONE'`
+  ];
+
+  if (fromDate && toDate) {
+    if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(fromDate) || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(toDate)) {
+      throw new Error('Invalid date format. Use YYYY-MM-DD');
+    }
+    whereClauses.push(`DATE(creation_time) BETWEEN DATE('${fromDate}') AND DATE('${toDate}')`);
+  } else if (fromDate) {
+    if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(fromDate)) throw new Error('Invalid date format. Use YYYY-MM-DD');
+    whereClauses.push(`DATE(creation_time) >= DATE('${fromDate}')`);
+  } else if (toDate) {
+    if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(toDate)) throw new Error('Invalid date format. Use YYYY-MM-DD');
+    whereClauses.push(`DATE(creation_time) <= DATE('${toDate}')`);
+  }
+
+  const whereSql = 'WHERE ' + whereClauses.join(' AND ');
+
+  const slotCommitmentRateIdr = BQ_SLOT_COMMITMENT_RATE_USD * USD_TO_IDR_RATE;
+  const slotAutoscaleRateIdr = BQ_SLOT_AUTOSCALE_RATE_USD * USD_TO_IDR_RATE;
+  const onDemandRateIdr = BQ_PRICE_PER_TB_USD * USD_TO_IDR_RATE;
+
+  const sql = `
+SELECT
+  CASE
+    WHEN ENDS_WITH(user_email, '.gserviceaccount.com') THEN 'Service Account (SA)'
+    WHEN ENDS_WITH(user_email, '@ioh.co.id') THEN 'Human User'
+    ELSE 'Third-Party / Cross-Project SA'
+  END AS account_type,
+  COUNT(1) AS total_queries,
+  ROUND(SUM(total_slot_ms) / (1000 * 3600), 2) AS total_slot_hours,
+  ROUND(SUM(total_bytes_billed) / POW(1024, 4), 4) AS total_tb_scanned,
+  ROUND(SUM(TIMESTAMP_DIFF(end_time, start_time, MILLISECOND)) / 1000, 2) AS total_duration_seconds,
+  ROUND((SUM(total_slot_ms) / (1000 * 3600)) * ${slotCommitmentRateIdr}, 0) AS est_cost_slot_commitment_idr,
+  ROUND((SUM(total_slot_ms) / (1000 * 3600)) * ${slotAutoscaleRateIdr}, 0) AS est_cost_slot_autoscale_idr,
+  ROUND((SUM(total_bytes_billed) / POW(1024, 4)) * ${onDemandRateIdr}, 0) AS est_cost_ondemand_scan_idr
+FROM \`${INFO_SCHEMA_REGION}\`.INFORMATION_SCHEMA.JOBS_BY_ORGANIZATION
+${whereSql}
+GROUP BY account_type
+ORDER BY total_slot_hours DESC
+`;
+
+  const queryRows = runBigQuerySync(sql, PROJECT_ID);
+
+  const rows = [];
+
+  queryRows.forEach(function(r) {
+    rows.push({
+      account_type: r.f[0].v,
+      total_queries: Number(r.f[1].v || 0),
+      total_slot_hours: Number(r.f[2].v || 0),
+      total_tb_scanned: Number(r.f[3].v || 0),
+      total_duration_seconds: Number(r.f[4].v || 0),
+      est_cost_slot_commitment_idr: Number(r.f[5].v || 0),
+      est_cost_slot_autoscale_idr: Number(r.f[6].v || 0),
+      est_cost_ondemand_scan_idr: Number(r.f[7].v || 0)
+    });
+  });
 
   return rows;
 

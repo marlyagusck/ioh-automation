@@ -30,6 +30,18 @@ model = GenerativeModel(
 )
 
 
+def dry_run_bytes(sql):
+
+    job_config = bigquery.QueryJobConfig(
+        dry_run=True,
+        use_query_cache=False
+    )
+
+    query_job = bq.query(sql, job_config=job_config)
+
+    return query_job.total_bytes_processed
+
+
 @app.route("/")
 def health():
     return {"status": "ok"}
@@ -121,18 +133,33 @@ SQL Query:
             root_cause = ai.get("root_cause", "")
             ai_summary = ai.get("ai_summary", "")
             recommendation = ai.get("recommendation", "")
-            optimized_sql = ai.get("optimized_sql", "")
-            saving = float(
-                ai.get(
-                    "potential_saving_percent",
-                    0
-                )
-            )
+            optimized_sql = ai.get("optimized_sql", "").strip()
 
-            estimated_saving_usd = round(
-                cost_usd * (saving / 100),
-                2
-            )
+            # potential_saving_percent is measured via BigQuery dry-run
+            # (real totalBytesProcessed diff), not taken from Gemini's
+            # self-reported number. If optimized_sql doesn't dry-run
+            # cleanly, this raises and the row is skipped as FAILED below
+            # so it stays pending for the next run instead of being
+            # recorded with a fabricated saving.
+            if optimized_sql:
+
+                original_bytes = dry_run_bytes(row.query_text)
+                optimized_bytes = dry_run_bytes(optimized_sql)
+
+                saving = round(
+                    max(0.0, (original_bytes - optimized_bytes) / original_bytes * 100),
+                    2
+                ) if original_bytes > 0 else 0.0
+
+                estimated_saving_usd = round(
+                    (max(0, original_bytes - optimized_bytes) / (1024 ** 4)) * BQ_PRICE_PER_TB_USD,
+                    2
+                )
+
+            else:
+
+                saving = 0.0
+                estimated_saving_usd = 0.0
 
             estimated_saving_idr = round(
                 estimated_saving_usd * USD_TO_IDR_RATE,
