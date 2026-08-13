@@ -42,6 +42,11 @@ def run():
           INTERVAL 1 DAY
       )
       AND query IS NOT NULL
+      AND NOT EXISTS (
+          SELECT 1
+          FROM `ck-finops-data-prd-in60.finops_ai.query_inventory` qi
+          WHERE qi.job_id = job_id
+      )
     ORDER BY total_bytes_billed DESC
     LIMIT 20
     """
