@@ -24,6 +24,10 @@ def run():
     )
 
     sql = """
+    DECLARE window_end TIMESTAMP DEFAULT
+      TIMESTAMP(DATETIME(CURRENT_DATE('Asia/Jakarta'), TIME '06:00:00'), 'Asia/Jakarta');
+    DECLARE window_start TIMESTAMP DEFAULT TIMESTAMP_SUB(window_end, INTERVAL 7 DAY);
+
     SELECT
       job_id,
       project_id,
@@ -37,10 +41,7 @@ def run():
     FROM
       `region-asia-southeast2`.INFORMATION_SCHEMA.JOBS_BY_PROJECT
     WHERE
-      creation_time >= TIMESTAMP_SUB(
-          CURRENT_TIMESTAMP(),
-          INTERVAL 1 DAY
-      )
+      creation_time BETWEEN window_start AND window_end
       AND query IS NOT NULL
       AND NOT EXISTS (
           SELECT 1

@@ -139,6 +139,7 @@ Service account yang dipakai oleh Cloud Run & Apps Script (BigQuery) minimal mem
 - `roles/bigquery.resourceViewer`
 - `roles/bigquery.jobUser`
 - `roles/bigquery.dataEditor`
+- `roles/browser` (resolve project display name via Cloud Resource Manager, dipakai `finops-top-project`)
 
 `finops-vm-stopped` juga memerlukan izin `compute.instances.list` (mis. `roles/compute.viewer`) untuk memindai VM lintas project.
 

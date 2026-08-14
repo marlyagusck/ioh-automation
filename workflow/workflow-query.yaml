@@ -22,7 +22,7 @@ main:
                   auth:
                     type: OIDC
                   body:
-                    project_id: ${project}
+                    project_id: ${project.project_id}
 
     - done:
         return:
