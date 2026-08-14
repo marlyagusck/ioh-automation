@@ -18,6 +18,7 @@ def run():
     body = request.get_json()
 
     project_id = body["project_id"]
+    project_name = body.get("project_name", project_id)
 
     client = bigquery.Client(
         project=project_id
@@ -64,6 +65,7 @@ def run():
             "query_id": str(uuid.uuid4()),
             "job_id": row.job_id,
             "project_id": row.project_id,
+            "project_name": project_name,
             "user_email": row.user_email,
             "creation_time": row.creation_time.isoformat(),
             "statement_type": row.statement_type,

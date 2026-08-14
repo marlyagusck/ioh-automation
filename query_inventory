@@ -5,6 +5,7 @@ CREATE TABLE `ck-finops-data-prd-in60.finops_ai.query_inventory`
   query_id STRING,
   job_id STRING,
   project_id STRING,
+  project_name STRING,
   user_email STRING,
   creation_time TIMESTAMP,
 

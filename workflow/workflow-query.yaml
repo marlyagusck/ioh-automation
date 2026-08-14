@@ -4,7 +4,7 @@ main:
     - getProjects:
         call: http.get
         args:
-          url: https://finops-top-project-xxxx.asia-southeast2.run.app/run
+          url: https://finops-top-project-393352745253.asia-southeast2.run.app/run
           auth:
             type: OIDC
         result: projectResult
@@ -18,12 +18,24 @@ main:
             - collectQueries:
                 call: http.post
                 args:
-                  url: https://finops-query-collector-xxxx.asia-southeast2.run.app/run
+                  url: https://finops-query-collector-393352745253.asia-southeast2.run.app/run
                   auth:
                     type: OIDC
                   body:
                     project_id: ${project.project_id}
+                    project_name: ${project.project_name}
+                result: collectorResult
+
+    - analyzeQueries:
+        call: http.get
+        args:
+          url: https://finops-ai-analyzer-393352745253.asia-southeast2.run.app/run
+          auth:
+            type: OIDC
+        result: analyzerResult
 
     - done:
         return:
           status: SUCCESS
+          projects_processed: ${len(projectResult.body.projects)}
+          analyzer_response: ${analyzerResult.body}

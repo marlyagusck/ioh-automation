@@ -133,6 +133,7 @@ SELECT * EXCEPT(rn) FROM (
   SELECT
     a.query_id,
     a.project_id,
+    a.project_name,
     a.user_email,
     a.query_text,
     a.severity,
@@ -179,48 +180,50 @@ LIMIT 100
 
         project_id: r.f[1].v,
 
-        user_email: r.f[2].v,
+        project_name: r.f[2].v,
 
-        query_text: r.f[3].v,
+        user_email: r.f[3].v,
 
-        severity: r.f[4].v,
+        query_text: r.f[4].v,
 
-        root_cause: r.f[5].v,
+        severity: r.f[5].v,
 
-        ai_summary: r.f[6].v,
+        root_cause: r.f[6].v,
 
-        recommendation: r.f[7].v,
+        ai_summary: r.f[7].v,
 
-        optimized_sql: r.f[8].v,
+        recommendation: r.f[8].v,
+
+        optimized_sql: r.f[9].v,
 
         saving:
-          Number(r.f[9].v || 0),
-
-        saving_usd:
           Number(r.f[10].v || 0),
 
-        saving_idr:
+        saving_usd:
           Number(r.f[11].v || 0),
 
-        bytes:
+        saving_idr:
           Number(r.f[12].v || 0),
+
+        bytes:
+          Number(r.f[13].v || 0),
 
         tb:
           (
-            Number(r.f[12].v || 0)
+            Number(r.f[13].v || 0)
             / 1099511627776
           ).toFixed(2),
 
         slot_ms:
-          Number(r.f[13].v || 0),
+          Number(r.f[14].v || 0),
 
         cc_email:
-          r.f[14]
-          ? r.f[14].v
+          r.f[15]
+          ? r.f[15].v
           : "",
 
         status:
-          r.f[8].v
+          r.f[9].v
           ? "OPTIMIZED"
           : "PENDING"
 
@@ -363,6 +366,7 @@ SELECT
   b.sent_at,
   b.acknowledged,
   a.project_id,
+  a.project_name,
   a.severity
 FROM \`${PROJECT_ID}.${DATASET}.${EMAIL_TABLE}\` b
 LEFT JOIN \`${PROJECT_ID}.${DATASET}.${VIEW_NAME}\` a
@@ -394,7 +398,8 @@ LIMIT 500
         sent_at: r.f[4].v,
         acknowledged: r.f[5].v === "true",
         project_id: r.f[6].v || "",
-        severity: r.f[7].v || ""
+        project_name: r.f[7].v || "",
+        severity: r.f[8].v || ""
       });
 
     });

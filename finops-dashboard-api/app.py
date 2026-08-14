@@ -86,6 +86,7 @@ def dashboard():
     sql = """
     SELECT
       project_id,
+      project_name,
       user_email,
       creation_time,
       statement_type,
@@ -113,6 +114,7 @@ def dashboard():
         result.append({
 
             "project_id": row.project_id,
+            "project_name": row.project_name,
             "user_email": row.user_email,
             "creation_time": str(row.creation_time),
 

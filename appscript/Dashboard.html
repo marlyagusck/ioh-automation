@@ -3490,11 +3490,16 @@ function loadData(data){
     DATA = Array.from(uniqueByQueryText.values()).sort((a,b)=>Number(b.tb||0)-Number(a.tb||0));
     console.log('loadData: received',rawData.length,'rows, deduped to',DATA.length,'unique query text rows');
 
-    // populate project filter
+    // populate project filter (value = project_id, label = project_name when available)
     const projectSel = document.getElementById('projectFilter');
     const prevProject = projectSel.value;
-    const projects = Array.from(new Set(DATA.map(x=>x.project_id))).sort();
-    projectSel.innerHTML = '<option value="">All Projects</option>' + projects.map(p=>`<option value="${p}">${p}</option>`).join('');
+    const projectNameById = new Map();
+    DATA.forEach(x=>{ if(x.project_id && !projectNameById.has(x.project_id)) projectNameById.set(x.project_id, x.project_name); });
+    const projects = Array.from(projectNameById.keys()).sort();
+    projectSel.innerHTML = '<option value="">All Projects</option>' + projects.map(p=>{
+        const label = projectNameById.get(p) && projectNameById.get(p) !== p ? `${projectNameById.get(p)} (${p})` : p;
+        return `<option value="${p}">${label}</option>`;
+    }).join('');
     if(projects.includes(prevProject)) projectSel.value = prevProject;
 
     document.getElementById("totalFinding").innerText    = DATA.length;
@@ -3600,7 +3605,7 @@ function drawTBChart(){
     tbChartInstance = new Chart(document.getElementById("tbChart"),{
         type:"bar",
         data:{
-            labels:top.map(x=>x.project_id),
+            labels:top.map(x=>x.project_name||x.project_id),
             datasets:[{
                 label:"TB Scanned",
                 data:top.map(x=>Number(x.tb)),
@@ -3682,7 +3687,7 @@ function renderTable(){
 <td>${index+1}</td>
 <td><code style="color:#93c5fd;font-size:11px;">${r.query_id}</code></td>
 <td><span class="badge ${sevClass}">${r.severity}</span></td>
-<td style="font-size:11px;">${r.project_id}</td>
+<td style="font-size:11px;" title="${r.project_id}">${r.project_name||r.project_id}</td>
 <td style="font-size:11px;">${r.user_email}</td>
 <td>${r.tb}</td>
 <td>${r.saving}%</td>
@@ -3977,7 +3982,7 @@ function renderSentEmailTable(rows){
 <td>${index+1}</td>
 <td>${escapeHtml(r.recipient)}</td>
 <td>${escapeHtml(r.cc_email)||"-"}</td>
-<td>${escapeHtml(r.project_id)||"-"}</td>
+<td title="${escapeHtml(r.project_id)}">${escapeHtml(r.project_name)||escapeHtml(r.project_id)||"-"}</td>
 <td>${escapeHtml(r.severity)||"-"}</td>
 <td><code style="color:#93c5fd;">${escapeHtml(r.query_id)}</code></td>
 <td>${formatTimestamp(r.sent_at)}</td>
@@ -3993,11 +3998,11 @@ function csvEscape(value){
 
 function exportSentEmailsToCsv(){
     if(lastSentEmailRows.length===0){ showToast("info","No Data","No sent emails to export."); return; }
-    const headers=["Recipient","CC","Project","Severity","Query ID","Sent At","Acknowledged"];
+    const headers=["Recipient","CC","Project","Project ID","Severity","Query ID","Sent At","Acknowledged"];
     const lines=[headers.join(",")];
     lastSentEmailRows.forEach(function(r){
         lines.push([
-            csvEscape(r.recipient),csvEscape(r.cc_email),csvEscape(r.project_id),
+            csvEscape(r.recipient),csvEscape(r.cc_email),csvEscape(r.project_name||r.project_id),csvEscape(r.project_id),
             csvEscape(r.severity),csvEscape(r.query_id),csvEscape(formatTimestamp(r.sent_at)),
             csvEscape(r.acknowledged?"Yes":"No")
         ].join(","));
